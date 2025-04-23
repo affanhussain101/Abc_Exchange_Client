@@ -25,39 +25,51 @@ class Program
     }
     public async Task Run()
     {
-
-        var packets = await _streamRepository.StreamAllPackets();
-
-        // Find missing sequences
-        var sequenceSet = new HashSet<int>();
-        int maxSeq = int.MinValue;
-        foreach (var packet in packets)
+        try
         {
-            sequenceSet.Add(packet.Sequence);
-            if (packet.Sequence > maxSeq)
-                maxSeq = packet.Sequence;
-        }
+            var packets = await _streamRepository.StreamAllPackets();
 
-        for (int i = 1; i <= maxSeq; i++)
-        {
-            if (!sequenceSet.Contains(i))
+            // Find missing sequences
+            var sequenceSet = new HashSet<int>();
+            int maxSeq = int.MinValue;
+            foreach (var packet in packets)
             {
-                Console.WriteLine($"Missing packet: {i}, requesting...");
-                var resendPacket = await _streamRepository.RequestResendPacket(i);
-                if (resendPacket != null)
-                    packets.Add(resendPacket);
+                sequenceSet.Add(packet.Sequence);
+                if (packet.Sequence > maxSeq)
+                    maxSeq = packet.Sequence;
             }
+
+            for (int i = 1; i <= maxSeq; i++)
+            {
+                if (!sequenceSet.Contains(i))
+                {
+                    Console.WriteLine($"Missing packet: {i}, requesting...");
+                    var resendPacket = await _streamRepository.RequestResendPacket(i);
+                    if (resendPacket != null)
+                        packets.Add(resendPacket);
+                }
+            }
+
+            packets.Sort((a, b) => a.Sequence.CompareTo(b.Sequence));
+
+            // Determine project root and output folder
+            var projectRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\.."));
+            var outputDir = Path.Combine(projectRoot, "Output");
+
+            if (!Directory.Exists(outputDir))
+            {
+                Directory.CreateDirectory(outputDir);
+            }
+
+            var path = Path.Combine(outputDir, "output.json");
+            var json = JsonSerializer.Serialize(packets, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(path, json);
+
+            Console.WriteLine($"Done. Output written to: {path}");
         }
-
-        packets.Sort((a, b) => a.Sequence.CompareTo(b.Sequence));
-
-        // Output JSON
-        var json = JsonSerializer.Serialize(packets, new JsonSerializerOptions { WriteIndented = true });
-        var path = Path.Combine(Directory.GetCurrentDirectory(), "output.json");
-        await File.WriteAllTextAsync(path, json);
-        Console.WriteLine($"Output written to: {path}");
-
-        Console.WriteLine("Done. Output written to output.json");
+        catch (Exception ex)
+        {
+            Console.WriteLine($"An error occurred: {ex.Message}");
+        }
     }
-
 }
